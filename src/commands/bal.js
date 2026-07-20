@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
-const User = require('../models/User');
+const { getSnapshot } = require('../db');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -8,9 +8,9 @@ module.exports = {
     .addUserOption(opt => opt.setName('user').setDescription('Hedef kullanıcı')),
   async execute(interaction) {
     const target = interaction.options.getUser('user') || interaction.user;
-    let u = await User.findOne({ userId: target.id });
+    const db = await getSnapshot();
+    const u = (db.users || []).find(x => x.userId === target.id);
     if (!u) return interaction.reply({ content: `${target.username} için bakiye bulunamadı.`, ephemeral: true });
-    // son 5 işlem için Transaction model sorgulanabilir (örnek yok)
     return interaction.reply({ content: `${target.username} — Bakiye: ${u.balance} coins\nToplam: ${u.totalEarned}` });
   }
 };

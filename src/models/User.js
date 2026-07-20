@@ -1,12 +1,8 @@
-const { Schema, model } = require('mongoose');
+const { getSnapshot } = require('../db');
 
-const UserSchema = new Schema({
-  userId: { type: String, required: true, unique: true },
-  balance: { type: Number, default: 0 },
-  totalEarned: { type: Number, default: 0 },
-  // joinRecords: [{ guildId, joinedAt, campaignId, holdingExpiresAt }]
-  joinRecords: [{ guildId: String, joinedAt: Date, campaignId: String, holdingExpiresAt: Date }],
-  createdAt: { type: Date, default: Date.now }
-});
-
-module.exports = model('User', UserSchema);
+module.exports = {
+  async findOne(query) {
+    const db = await getSnapshot();
+    return db.users.find(u => u.userId === query.userId) || null;
+  }
+};

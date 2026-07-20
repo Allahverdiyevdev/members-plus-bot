@@ -2,7 +2,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { Client, Collection, GatewayIntentBits, Partials } = require('discord.js');
-const { connectDB } = require('./db');
+const { ensureDB } = require('./db');
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages],
@@ -31,7 +31,7 @@ if (fs.existsSync(eventsPath)) {
 }
 
 async function main() {
-  await connectDB(process.env.MONGODB_URI);
+  await ensureDB();
   await client.login(process.env.DISCORD_TOKEN);
   console.log('Discord client logged in');
 }

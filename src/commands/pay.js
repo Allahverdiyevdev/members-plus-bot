@@ -1,8 +1,6 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
 const { v4: uuidv4 } = require('uuid');
-const User = require('../models/User');
-const Transaction = require('../models/Transaction');
-const { mongoose } = require('../db');
+const { runExclusive } = require('../db');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -17,35 +15,34 @@ module.exports = {
     if (amount <= 0) return interaction.reply({ content: 'Miktar pozitif olmalıdır.', ephemeral: true });
     if (toUser.id === fromId) return interaction.reply({ content: 'Kendine gönderemezsin.', ephemeral: true });
 
-    // atomic transfer using mongoose transaction
-    const session = await mongoose.startSession();
     try {
-      session.startTransaction();
-      const [from, to] = await Promise.all([
-        User.findOneAndUpdate({ userId: fromId }, { $setOnInsert: { userId: fromId } }, { upsert: true, new: true, session }),
-        User.findOneAndUpdate({ userId: toUser.id }, { $setOnInsert: { userId: toUser.id } }, { upsert: true, new: true, session })
-      ]);
-      if (from.balance < amount) {
-        await session.abortTransaction();
-        return interaction.reply({ content: 'Yetersiz bakiye.', ephemeral: true });
-      }
-      from.balance -= amount;
-      to.balance += amount;
-      to.totalEarned += amount;
-      await from.save({ session });
-      await to.save({ session });
+      const result = await runExclusive(async (db) => {
+        db.users = db.users || [];
+        db.transactions = db.transactions || [];
+        let from = db.users.find(u => u.userId === fromId);
+        if (!from) {
+          from = { userId: fromId, balance: 0, totalEarned: 0, joinRecords: [], createdAt: new Date().toISOString() };
+          db.users.push(from);
+        }
+        let to = db.users.find(u => u.userId === toUser.id);
+        if (!to) {
+          to = { userId: toUser.id, balance: 0, totalEarned: 0, joinRecords: [], createdAt: new Date().toISOString() };
+          db.users.push(to);
+        }
+        if (from.balance < amount) return { ok: false, reason: 'Yetersiz bakiye.' };
+        from.balance -= amount;
+        to.balance += amount;
+        to.totalEarned += amount;
+        const tx = { txId: uuidv4(), from: fromId, to: toUser.id, amount, type: 'transfer', createdAt: new Date().toISOString() };
+        db.transactions.push(tx);
+        return { ok: true };
+      });
 
-      const tx = new Transaction({ txId: uuidv4(), from: fromId, to: toUser.id, amount, type: 'transfer' });
-      await tx.save({ session });
-
-      await session.commitTransaction();
+      if (!result.ok) return interaction.reply({ content: result.reason || 'İşlem başarısız.', ephemeral: true });
       return interaction.reply({ content: `Başarılı: ${amount} coin gönderildi.` });
     } catch (err) {
-      await session.abortTransaction();
       console.error('transfer error', err);
       return interaction.reply({ content: 'İşlem sırasında hata oluştu.', ephemeral: true });
-    } finally {
-      session.endSession();
     }
   }
 };
